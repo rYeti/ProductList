@@ -1,0 +1,144 @@
+@page "/fetchproducts"
+@using System.Net.Http.Json
+@using System.Text.Json
+@using System.Text.Json.Serialization
+@inject HttpClient Http
+
+<h3>Product List</h3>
+
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <p class="text-danger">@errorMessage</p>
+}
+
+<ul>
+    @if (products is not null && products.Length > 0)
+    {
+        foreach (var product in products)
+        {
+            <li>
+                <strong>@product.Name</strong> - $@product.Price
+                <span class="text-muted">(@product.Category?.Name ?? "Unknown category")</span>
+            </li>
+        }
+    }
+    else if (products is null)
+    {
+        <li>Loading...</li>
+    }
+    else
+    {
+        <li>No products available.</li>
+    }
+</ul>
+
+@code {
+    private Product[]? products;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // Copilot suggested using HttpClient with a typed API route.
+            // This ensures the front-end calls the same back-end endpoint
+            // and makes it easier to debug route mismatches.
+            using var response = await Http.GetAsync("/api/productlist");
+
+            response.EnsureSuccessStatusCode();
+            var json = await response.Content.ReadAsStringAsync();
+
+            // Copilot helped improve the deserialization flow by explicitly
+            // reading raw JSON and using System.Text.Json for better error handling.
+            products = JsonSerializer.Deserialize<Product[]>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+
+            if (!ValidateProducts(products))
+            {
+                errorMessage = "The product data was malformed.";
+                products = Array.Empty<Product>();
+            }
+        }
+        catch (TaskCanceledException)
+        {
+            errorMessage = "The request timed out. Please try again later.";
+            products = Array.Empty<Product>();
+        }
+        catch (HttpRequestException ex)
+        {
+            errorMessage = $"Unable to load products: {ex.Message}";
+            products = Array.Empty<Product>();
+        }
+        catch (NotSupportedException)
+        {
+            errorMessage = "The server returned an unsupported content type.";
+            products = Array.Empty<Product>();
+        }
+        catch (JsonException ex)
+        {
+            // Copilot suggested catching JsonException separately to distinguish
+            // malformed JSON from other request failures.
+            Console.WriteLine($"Error: {ex.Message}");
+            errorMessage = "The product data was malformed.";
+            products = Array.Empty<Product>();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error: {ex.Message}");
+            errorMessage = "An unexpected error occurred while loading products.";
+            products = Array.Empty<Product>();
+        }
+    }
+
+    private static bool ValidateProducts(Product[]? products)
+    {
+        if (products is null || products.Length == 0)
+        {
+            return false;
+        }
+
+        foreach (var product in products)
+        {
+            if (product.Id <= 0 || string.IsNullOrWhiteSpace(product.Name) || product.Price < 0 || product.Stock < 0)
+            {
+                return false;
+            }
+
+            if (product.Category is null || product.Category.Id <= 0 || string.IsNullOrWhiteSpace(product.Category.Name))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    public class Product
+    {
+        [JsonPropertyName("id")]
+        public int Id { get; set; }
+
+        [JsonPropertyName("name")]
+        public string Name { get; set; } = string.Empty;
+
+        [JsonPropertyName("price")]
+        public double Price { get; set; }
+
+        [JsonPropertyName("stock")]
+        public int Stock { get; set; }
+
+        [JsonPropertyName("category")]
+        public Category? Category { get; set; }
+    }
+
+    public class Category
+    {
+        [JsonPropertyName("id")]
+        public int Id { get; set; }
+
+        [JsonPropertyName("name")]
+        public string Name { get; set; } = string.Empty;
+    }
+}
